@@ -67,3 +67,29 @@ Options:
 cp .env.example .env      # values fill karo
 docker compose up --build
 ```
+
+## Streamlit Web UI (browser me terminal-style)
+
+Ek Streamlit web app bhi hai — terminal jaisi dark/monospace styling ke saath, lekin browser me chalta hai. (Ye asli terminal nahi hai — keystroke-by-keystroke nahi hoga — but visually terminal jaisa dikhega aur wahi scan/generate/preview flow hoga.)
+
+### Install & run
+```bash
+pip install -r requirements.txt
+streamlit run app.py
+```
+Browser me `http://localhost:8501` khul jayega.
+
+### Do modes
+1. **Local folder path** — agar Streamlit usi machine pe chal raha hai jahan project hai, seedha path type karo.
+2. **Zip upload** — agar Streamlit kahin aur (server/cloud) chal raha hai, apne project ka `.zip` bana ke upload karo.
+
+### Flow
+1. Path/zip do → **Scan Project**
+2. Detection result terminal-style panel me dikhega (stack, port, services)
+3. App name/port set karo, services check/uncheck karo, Dockerfile/.env/.dockerignore toggle karo
+4. Live preview dikhega — `docker-compose.yml`, `.env.example`, `.dockerignore`, `Dockerfile`
+5. **Generate files & download zip** dabao → ek `.zip` mil jayega jisme sab generated files honge
+
+Zip ko apne project folder me extract karke `.env.example` ko `.env` bana lo aur `docker compose up --build` chala do.
+
+`app.py` bhi `generate_compose.py` pe hi depend karta hai (same folder me hona chahiye) — teeno interface (CLI, terminal UI, Streamlit) ek hi detection/generation logic use karte hain, to result hamesha consistent rahega.
