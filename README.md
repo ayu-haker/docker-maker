@@ -2,6 +2,43 @@
 
 Kisi bhi project folder ko scan karke `docker-compose.yml`, `Dockerfile`, `.env.example`, aur `.dockerignore` khud-ba-khud generate karta hai — production-ready settings ke saath (health checks, custom network, service dependencies).
 
+## Example Run (Terminal UI)
+
+Real run — WSL terminal pe ek Node.js project (`compilor`) scan karke:
+
+```bash
+python3 ui.py
+```
+
+![Terminal UI — scan, detection, config, preview](screenshots/terminal-ui-1.png)
+
+Detection ke baad app name/port set kiya (`compiler-app`, port `3000`), `.env.example` aur `.dockerignore` dono ke liye `y`, phir preview dekh ke files likhne ki confirmation di:
+
+![Terminal UI — generate, done, next steps](screenshots/terminal-ui-2.png)
+
+Generate hone ke baad exact ye output milta hai:
+
+```
+Generating docker-compose.yml [████████████████████████████████] 100%
+Generating Dockerfile          [████████████████████████████████] 100%
+Generating .dockerignore       [████████████████████████████████] 100%
+Generating .env.example        [████████████████████████████████] 100%
+
+┌─ Done! ────────────────────────────────────────────────────────┐
+│ ✔ .../compilor/docker-compose.yml
+│ ✔ .../compilor/Dockerfile
+│ ⚠ CMD line generated Dockerfile me check kar lena
+│ ✔ .../compilor/.dockerignore
+│ ✔ .../compilor/.env.example
+│ ⚠ .env.example ko .env me copy karke real values bharo
+│
+│ Ab chalane ke liye:
+│   cd .../compilor
+│   cp .env.example .env
+│   docker compose up --build
+└───────────────────────────────────────────────────────────────┘
+```
+
 ## Do tarike se use kar sakte ho
 
 ### 1. Interactive Terminal UI (recommended)
