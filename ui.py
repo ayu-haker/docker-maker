@@ -18,6 +18,9 @@ from generate_compose import (
     detect_stack,
     generate_compose,
     generate_dockerfile,
+    generate_dockerignore,
+    generate_env_example,
+    backup_if_exists,
 )
 
 # --------------------------------------------------------------------------
@@ -207,21 +210,59 @@ def main():
     out_dir = os.path.abspath(out_dir_input)
     os.makedirs(out_dir, exist_ok=True)
 
+    gen_env = ask_yes_no("Ek .env.example file bhi generate karu?", default=True)
+    gen_dockerignore = ask_yes_no(".dockerignore bhi generate karu?", default=True)
+
     print()
     info["services"] = selected_services
-    progress_bar("Generating docker-compose.yml", seconds=0.8)
     compose_content = generate_compose(info, app_name, port)
+
+    # --- Preview before writing ---
+    print(f"{C.BOLD}Preview — docker-compose.yml:{C.RESET}\n")
+    print(f"{C.DIM}{'─' * WIDTH}{C.RESET}")
+    for line in compose_content.rstrip().splitlines():
+        print(f"{C.DIM}│{C.RESET} {line}")
+    print(f"{C.DIM}{'─' * WIDTH}{C.RESET}\n")
+
+    if not ask_yes_no("Ye files likh du?", default=True):
+        print(f"{C.YELLOW}Cancelled — kuch bhi likha nahi gaya.{C.RESET}")
+        sys.exit(0)
+
+    print()
+
+    def write_file(path, content, label):
+        backup_path = backup_if_exists(path)
+        if backup_path:
+            print(f"  {C.DIM}(existing {label} backed up -> {os.path.basename(backup_path)}){C.RESET}")
+        with open(path, "w") as f:
+            f.write(content)
+
+    progress_bar("Generating docker-compose.yml", seconds=0.8)
     compose_path = os.path.join(out_dir, "docker-compose.yml")
-    with open(compose_path, "w") as f:
-        f.write(compose_content)
+    write_file(compose_path, compose_content, "docker-compose.yml")
 
     dockerfile_path = None
     if include_dockerfile:
         progress_bar("Generating Dockerfile", seconds=0.6)
         dockerfile_content = generate_dockerfile(info)
         dockerfile_path = os.path.join(out_dir, "Dockerfile")
-        with open(dockerfile_path, "w") as f:
-            f.write(dockerfile_content)
+        write_file(dockerfile_path, dockerfile_content, "Dockerfile")
+
+    dockerignore_path = None
+    if gen_dockerignore:
+        dockerignore_path = os.path.join(out_dir, ".dockerignore")
+        if os.path.isfile(dockerignore_path):
+            dockerignore_path = None  # don't touch existing one
+        else:
+            progress_bar("Generating .dockerignore", seconds=0.4)
+            with open(dockerignore_path, "w") as f:
+                f.write(generate_dockerignore(info))
+
+    env_path = None
+    if gen_env:
+        progress_bar("Generating .env.example", seconds=0.4)
+        env_path = os.path.join(out_dir, ".env.example")
+        write_file(env_path, generate_env_example(info, app_name, port), ".env.example")
 
     print()
     result_lines = [
@@ -233,9 +274,17 @@ def main():
     elif info["dockerfile_exists"]:
         result_lines.append(f"{C.DIM}ℹ Existing Dockerfile ko touch nahi kiya{C.RESET}")
 
+    if dockerignore_path:
+        result_lines.append(f"{C.GREEN}✔{C.RESET} {dockerignore_path}")
+    if env_path:
+        result_lines.append(f"{C.GREEN}✔{C.RESET} {env_path}")
+        result_lines.append(f"{C.YELLOW}⚠ .env.example ko .env me copy karke real values bharo{C.RESET}")
+
     result_lines.append("")
     result_lines.append(f"{C.BOLD}Ab chalane ke liye:{C.RESET}")
     result_lines.append(f"  {C.CYAN}cd {out_dir}{C.RESET}")
+    if env_path:
+        result_lines.append(f"  {C.CYAN}cp .env.example .env{C.RESET}")
     result_lines.append(f"  {C.CYAN}docker compose up --build{C.RESET}")
 
     box("Done!", result_lines, color=C.GREEN)

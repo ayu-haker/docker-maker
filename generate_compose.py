@@ -254,6 +254,93 @@ def generate_dockerfile(info):
 
 
 # --------------------------------------------------------------------------
+# .dockerignore generation
+# --------------------------------------------------------------------------
+
+DOCKERIGNORE_COMMON = """.git
+.gitignore
+.env
+.env.*
+!.env.example
+*.md
+.vscode
+.idea
+docker-compose.yml
+docker-compose.override.yml
+Dockerfile
+.dockerignore
+"""
+
+DOCKERIGNORE_EXTRA = {
+    "node": "node_modules\nnpm-debug.log*\nyarn-error.log\ndist\nbuild\ncoverage\n",
+    "python-django": "__pycache__/\n*.pyc\n*.pyo\nvenv/\n.venv/\n*.sqlite3\nstaticfiles/\n.pytest_cache/\n",
+    "python-flask": "__pycache__/\n*.pyc\n*.pyo\nvenv/\n.venv/\n.pytest_cache/\n",
+    "python-fastapi": "__pycache__/\n*.pyc\n*.pyo\nvenv/\n.venv/\n.pytest_cache/\n",
+    "python-generic": "__pycache__/\n*.pyc\n*.pyo\nvenv/\n.venv/\n.pytest_cache/\n",
+    "go": "bin/\n*.exe\nvendor/\n",
+    "static": "node_modules\n",
+}
+
+
+def generate_dockerignore(info):
+    extra = DOCKERIGNORE_EXTRA.get(info["language"], "")
+    return DOCKERIGNORE_COMMON + extra
+
+
+# --------------------------------------------------------------------------
+# .env.example generation
+# --------------------------------------------------------------------------
+
+SERVICE_ENV_VARS = {
+    "postgres": """# PostgreSQL
+POSTGRES_USER=appuser
+POSTGRES_PASSWORD=apppassword
+POSTGRES_DB=appdb
+DATABASE_URL=postgresql://appuser:apppassword@db:5432/appdb
+""",
+    "mysql": """# MySQL
+MYSQL_ROOT_PASSWORD=rootpassword
+MYSQL_DATABASE=appdb
+MYSQL_USER=appuser
+MYSQL_PASSWORD=apppassword
+DATABASE_URL=mysql://appuser:apppassword@db:3306/appdb
+""",
+    "mongo": """# MongoDB
+MONGO_INITDB_ROOT_USERNAME=appuser
+MONGO_INITDB_ROOT_PASSWORD=apppassword
+MONGO_URL=mongodb://appuser:apppassword@mongo:27017
+""",
+    "redis": """# Redis
+REDIS_URL=redis://redis:6379
+""",
+}
+
+
+def generate_env_example(info, app_name, port):
+    lines = [f"# {app_name} — environment variables", f"PORT={port}", ""]
+    for s in sorted(info["services"]):
+        lines.append(SERVICE_ENV_VARS[s])
+    return "\n".join(lines).rstrip() + "\n"
+
+
+# --------------------------------------------------------------------------
+# Backup helper — never silently clobber a file the user already has
+# --------------------------------------------------------------------------
+
+def backup_if_exists(path):
+    """If `path` already exists, rename it to path.bak (or .bak2, .bak3...)."""
+    if not os.path.isfile(path):
+        return None
+    backup_path = path + ".bak"
+    n = 2
+    while os.path.isfile(backup_path):
+        backup_path = f"{path}.bak{n}"
+        n += 1
+    os.rename(path, backup_path)
+    return backup_path
+
+
+# --------------------------------------------------------------------------
 # docker-compose.yml generation
 # --------------------------------------------------------------------------
 
@@ -269,6 +356,13 @@ SERVICE_BLOCKS = {
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appuser -d appdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - appnet
 """,
     "mysql": """  db:
     image: mysql:8
@@ -282,6 +376,13 @@ SERVICE_BLOCKS = {
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "appuser", "-papppassword"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - appnet
 """,
     "mongo": """  mongo:
     image: mongo:7
@@ -293,6 +394,13 @@ SERVICE_BLOCKS = {
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - appnet
 """,
     "redis": """  redis:
     image: redis:7-alpine
@@ -301,6 +409,13 @@ SERVICE_BLOCKS = {
       - "6379:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - appnet
 """,
 }
 
@@ -338,19 +453,27 @@ def generate_compose(info, app_name, port_override=None):
         for s in services:
             dep = DEPENDS_ON_NAME[s]
             if dep not in seen:
-                lines.append(f"      - {dep}")
+                lines.append(f"      {dep}:")
+                lines.append("        condition: service_healthy")
                 seen.add(dep)
 
     lines.append("    env_file:")
     lines.append("      - .env")
     lines.append("    volumes:")
     lines.append("      - .:/app")
+    lines.append("    networks:")
+    lines.append("      - appnet")
     lines.append("")
 
     for s in services:
         lines.append(SERVICE_BLOCKS[s])
 
+    lines.append("networks:")
+    lines.append("  appnet:")
+    lines.append("    driver: bridge")
+
     if services:
+        lines.append("")
         lines.append("volumes:")
         seen = set()
         for s in services:
@@ -372,6 +495,9 @@ def main():
     parser.add_argument("--app-name", default=None, help="Service name for your app (default: folder name)")
     parser.add_argument("--port", type=int, default=None, help="Override the detected app port")
     parser.add_argument("--out", default=None, help="Output directory (default: same as project path)")
+    parser.add_argument("--no-env", action="store_true", help="Skip generating .env.example")
+    parser.add_argument("--no-dockerignore", action="store_true", help="Skip generating .dockerignore")
+    parser.add_argument("--no-backup", action="store_true", help="Overwrite existing files instead of backing them up to .bak")
     args = parser.parse_args()
 
     root = os.path.abspath(args.path)
@@ -385,28 +511,53 @@ def main():
     app_name = args.app_name or re.sub(r"[^a-z0-9_-]", "", os.path.basename(root).lower()) or "app"
 
     info = detect_stack(root)
+    port = args.port or info["port"]
 
     print(f"Detected language/framework : {info['language']}")
     print(f"Detected app port            : {info['port']}")
     print(f"Detected extra services      : {', '.join(sorted(info['services'])) or 'none'}")
     print(f"Existing Dockerfile found    : {info['dockerfile_exists']}")
+    print()
 
-    compose_content = generate_compose(info, app_name, args.port)
+    def write_with_backup(path, content, label):
+        if not args.no_backup:
+            backup_path = backup_if_exists(path)
+            if backup_path:
+                print(f"  (existing {label} backed up to {os.path.basename(backup_path)})")
+        with open(path, "w") as f:
+            f.write(content)
+        print(f"✔ Wrote {path}")
+
+    compose_content = generate_compose(info, app_name, port)
     compose_path = os.path.join(out_dir, "docker-compose.yml")
-    with open(compose_path, "w") as f:
-        f.write(compose_content)
-    print(f"\n✔ Wrote {compose_path}")
+    write_with_backup(compose_path, compose_content, "docker-compose.yml")
 
     if not info["dockerfile_exists"] and info["language"] != "unknown":
         dockerfile_content = generate_dockerfile(info)
         dockerfile_path = os.path.join(out_dir, "Dockerfile")
-        with open(dockerfile_path, "w") as f:
-            f.write(dockerfile_content)
-        print(f"✔ Wrote {dockerfile_path} (no Dockerfile existed, so one was generated — review the CMD line)")
+        write_with_backup(dockerfile_path, dockerfile_content, "Dockerfile")
+        print("  ⚠ review the CMD line — the start command was guessed")
     elif info["language"] == "unknown":
         print("⚠ Could not confidently detect a stack — docker-compose.yml was still generated with a basic app service. Edit build/ports manually.")
     else:
         print("ℹ Existing Dockerfile detected — left untouched, compose file will use it via 'build: .'")
+
+    if not args.no_dockerignore:
+        dockerignore_path = os.path.join(out_dir, ".dockerignore")
+        if not os.path.isfile(dockerignore_path):
+            with open(dockerignore_path, "w") as f:
+                f.write(generate_dockerignore(info))
+            print(f"✔ Wrote {dockerignore_path}")
+        else:
+            print("ℹ .dockerignore already exists — left untouched")
+
+    if not args.no_env:
+        env_example_path = os.path.join(out_dir, ".env.example")
+        write_with_backup(env_example_path, generate_env_example(info, app_name, port), ".env.example")
+        if not os.path.isfile(os.path.join(out_dir, ".env")):
+            print("  ⚠ Copy .env.example to .env and fill in real values before running")
+
+    print(f"\nNext steps:\n  cd {out_dir}\n  docker compose up --build")
 
 
 if __name__ == "__main__":
