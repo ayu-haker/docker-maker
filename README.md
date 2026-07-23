@@ -68,9 +68,9 @@ cp .env.example .env      # values fill karo
 docker compose up --build
 ```
 
-## Streamlit Web UI (browser me terminal-style)
+## Streamlit Web UI (modern dashboard)
 
-Ek Streamlit web app bhi hai — terminal jaisi dark/monospace styling ke saath, lekin browser me chalta hai. (Ye asli terminal nahi hai — keystroke-by-keystroke nahi hoga — but visually terminal jaisa dikhega aur wahi scan/generate/preview flow hoga.)
+Ek Streamlit web app bhi hai — clean, modern SaaS-style dashboard design (dark theme, gradient accents, card layout, sidebar stepper, live tabs preview) jo browser me chalta hai.
 
 ### Install & run
 ```bash
@@ -79,17 +79,25 @@ streamlit run app.py
 ```
 Browser me `http://localhost:8501` khul jayega.
 
+### Design
+- Sidebar me step-by-step progress tracker (1→4)
+- Detection result stat-cards me (Stack / Port / Dockerfile / Services count)
+- Detected services colored pill-badges ke roop me
+- Configure section me checkboxes + live tabs preview (docker-compose.yml, .env.example, .dockerignore, Dockerfile — sab alag tabs me)
+- Gradient buttons, rounded cards, Inter font for UI + JetBrains Mono for code
+
 ### Do modes
 1. **Local folder path** — agar Streamlit usi machine pe chal raha hai jahan project hai, seedha path type karo.
 2. **Zip upload** — agar Streamlit kahin aur (server/cloud) chal raha hai, apne project ka `.zip` bana ke upload karo.
 
 ### Flow
-1. Path/zip do → **Scan Project**
-2. Detection result terminal-style panel me dikhega (stack, port, services)
+1. Path/zip do → **Scan**
+2. Detection result stat-cards + service badges dikhenge
 3. App name/port set karo, services check/uncheck karo, Dockerfile/.env/.dockerignore toggle karo
-4. Live preview dikhega — `docker-compose.yml`, `.env.example`, `.dockerignore`, `Dockerfile`
-5. **Generate files & download zip** dabao → ek `.zip` mil jayega jisme sab generated files honge
+4. Tabs me live preview — `docker-compose.yml`, `.env.example`, `.dockerignore`, `Dockerfile`
+5. **Generate files** → **Download .zip**
 
 Zip ko apne project folder me extract karke `.env.example` ko `.env` bana lo aur `docker compose up --build` chala do.
 
 `app.py` bhi `generate_compose.py` pe hi depend karta hai (same folder me hona chahiye) — teeno interface (CLI, terminal UI, Streamlit) ek hi detection/generation logic use karte hain, to result hamesha consistent rahega.
+
